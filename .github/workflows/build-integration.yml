@@ -1,0 +1,44 @@
+name: Build native integration ZIP
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Python-independent runtime
+        run: docker buildx build -f native/Dockerfile --target artifact --output type=local,dest=native-out .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.arch }}
+          path: native-out/
+  package:
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-aarch64
+          path: custom_components/radio_ad_detector/native/linux-aarch64-musl
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-x86_64
+          path: custom_components/radio_ad_detector/native/linux-x86_64-musl
+      - run: python tools/package_integration.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radio-ad-detector-integration
+          path: dist/radio_ad_detector.zip

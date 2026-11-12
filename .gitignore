@@ -1,0 +1,45 @@
+# Python and editor files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local Home Assistant configuration and credentials
+.env
+.env.*
+.storage/
+.cloud/
+.ssh/
+.aws/
+.agents/
+.codex/
+configuration.yaml
+secrets.yaml
+config.json
+*.pem
+*.key
+home-assistant_v2.db*
+
+# Logs, diagnostics, and audio samples
+*.log*
+/.diagnostics/
+/*-measurements.json
+/native-test/
+/models/
+*.mp3
+*.wav
+*.pcm
+
+# Build output
+/build/
+/dist/
+/native-out/
+/custom_components/radio_ad_detector/native/
+*.zip
+*.tar.gz

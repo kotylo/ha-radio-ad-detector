@@ -1,0 +1,39 @@
+{
+  "title": "Radio Ad Detector",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Local radio ad detector",
+        "description": "Enter Home Assistant's LAN IP address reachable by your Chromecast. Audio analysis runs inside this integration. The first setup downloads a verified audio model (~16 MB).",
+        "data": {"advertised_host": "Home Assistant LAN IP address", "port": "Proxy listening port"}
+      },
+      "reconfigure": {
+        "title": "Radio proxy network settings",
+        "data": {"advertised_host": "Home Assistant LAN IP address", "port": "Proxy listening port"}
+      }
+    },
+    "error": {
+      "invalid_host": "Enter a LAN IPv4 or IPv6 address reachable by your speaker.",
+      "port_in_use": "That port is already in use. Choose another port.",
+      "unsupported_platform": "This release is missing the native runtime for your platform. Install a complete release ZIP for Linux ARM64 or x86-64 Home Assistant OS/Container.",
+      "ffmpeg_missing": "FFmpeg is required. It is included in Home Assistant OS and Container."
+    },
+    "abort": {"already_configured": "Radio Ad Detector is already configured.", "reconfigure_successful": "Network settings updated."}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Radio playback settings",
+        "data": {"output_format": "Default playback format"},
+        "data_description": {
+          "output_format": "WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the local network. Original MP3 saves local network traffic but can take longer to start."
+        }
+      }
+    }
+  },
+  "selector": {
+    "output_format": {
+      "options": {"wav": "WAV (faster startup)", "mp3": "Original MP3 (lower network traffic)"}
+    }
+  }
+}

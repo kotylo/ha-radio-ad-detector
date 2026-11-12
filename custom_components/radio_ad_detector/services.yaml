@@ -1,0 +1,76 @@
+play:
+  name: Play a radio station
+  description: Play a public MP3 station through the local detector on a selected media player.
+  fields:
+    entity_id:
+      name: Media player
+      required: true
+      selector:
+        entity:
+          domain: media_player
+    stream_url:
+      name: Station URL
+      description: Full HTTP or HTTPS URL of a direct, fixed-bitrate MP3 stream.
+      required: true
+      example: https://radio.example/live.mp3
+      selector:
+        text:
+    slot:
+      name: Stream slot
+      description: Choose 1, 2 or 3 to use that slot's detection entities and replace its current stream. Omit to use the first free slot.
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+    bitrate:
+      name: Bitrate
+      description: Optional kb/s override when the station does not advertise its bitrate.
+      selector:
+        number:
+          min: 32
+          max: 512
+          unit_of_measurement: kb/s
+          mode: box
+    output_format:
+      name: Output format
+      description: Override the integration's default format. WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the LAN. MP3 passes the original compressed audio through.
+      selector:
+        select:
+          options:
+            - wav
+            - mp3
+get_proxy_url:
+  name: Get a proxy URL
+  description: Return a playback URL without starting a radio connection.
+  fields:
+    stream_url:
+      name: Station URL
+      required: true
+      selector:
+        text:
+    slot:
+      name: Stream slot
+      description: Choose 1, 2 or 3 to use that slot's detection entities when the URL is played. Omit to use the first free slot.
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+    bitrate:
+      name: Bitrate
+      selector:
+        number:
+          min: 32
+          max: 512
+          mode: box
+    output_format:
+      name: Output format
+      description: Override the integration's default playback format.
+      selector:
+        select:
+          options:
+            - wav
+            - mp3

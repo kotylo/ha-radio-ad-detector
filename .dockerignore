@@ -1,0 +1,6 @@
+**
+!native/
+!native/Dockerfile
+!native/Test.Dockerfile
+!native/select_ops.py
+!native/notices.py
