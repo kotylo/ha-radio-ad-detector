@@ -7,6 +7,8 @@ integration runs YAMNet locally on the same stream it sends to your speaker.
 Speech and sustained non-music can trigger a detection. DJ chatter can trigger
 too, and music-heavy ads can slip through.
 
+<img src="assets/ha-usage.png" alt="Radio with a red line through Ad" width="500">
+
 ## Install
 
 Requires Home Assistant **2026.4 or newer** on **Home Assistant OS or Container**
