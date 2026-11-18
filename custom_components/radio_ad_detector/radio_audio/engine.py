@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 import logging
@@ -39,8 +40,9 @@ class Playback:
 
 
 class Radio:
-    def __init__(self, config, model):
+    def __init__(self, config, model, get_playback_buffer):
         self.config, self.model = config, model
+        self.get_playback_buffer = get_playback_buffer
         self.sessions = {}
         self.slots = {}
         self.slot_locks = {slot: asyncio.Lock() for slot in STREAM_SLOTS}
@@ -237,6 +239,7 @@ class Radio:
         upstream = decoder = transcoder = response = None
         workers = []
         try:
+            playback_buffer = self.get_playback_buffer()
             self.publish()
             if custom:
                 upstream = await asyncio.wait_for(self.open_custom(url), timeout=20)
@@ -267,6 +270,8 @@ class Radio:
             # Bound the speaker's lead and memory use while the detector consumes
             # the same bytes at real-time speed, including during the initial burst.
             pending = asyncio.Queue(maxsize=math.ceil(startup_bytes / RELAY_CHUNK_SIZE) + 1)
+            playback_bytes = startup_bytes + playback_buffer * bytes_per_second
+            playback = asyncio.Queue(maxsize=math.ceil(playback_bytes / RELAY_CHUNK_SIZE) + 1)
             decoder = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
                 "-probesize", "32768", "-analyzeduration", "0", "-f", "mp3", "-i", "pipe:0",
@@ -298,14 +303,16 @@ class Radio:
                 while True:
                     # A source may pause after its initial burst. Allow time for
                     # the queued audio to play before counting that as starvation.
-                    buffered_seconds = pending.qsize() * RELAY_CHUNK_SIZE / bytes_per_second
+                    buffered_seconds = max(pending.qsize(), playback.qsize()) * RELAY_CHUNK_SIZE / bytes_per_second
                     chunk = await asyncio.wait_for(
                         upstream.content.read(RELAY_CHUNK_SIZE),
                         timeout=buffered_seconds + float(self.config.get("read_timeout_seconds", 12)),
                     )
                     if not chunk:
-                        # Finish analyzing bytes already delivered to the player.
-                        await pending.join()
+                        await asyncio.gather(pending.join(), playback.join())
+                        if wav_sender is not None:
+                            transcoder.stdin.close()
+                            await wav_sender
                         raise ConnectionError("Upstream stream ended")
                     # Let the player fill its startup buffer immediately, then
                     # limit delivery to real time with a bounded lead.
@@ -317,13 +324,23 @@ class Radio:
                         target = now
                     if target > now:
                         await asyncio.sleep(target - now)
+                    # Queue analysis immediately and shift the playback schedule, including its startup burst.
+                    await pending.put(chunk)
+                    await playback.put((time.monotonic() + playback_buffer, chunk))
+                    sent += len(chunk)
+
+            async def send_audio():
+                while True:
+                    release_at, chunk = await playback.get()
+                    delay = release_at - time.monotonic()
+                    if delay > 0:
+                        await asyncio.sleep(delay)
                     if transcoder is None:
                         await asyncio.wait_for(response.write(chunk), timeout=8)
                     else:
                         transcoder.stdin.write(chunk)
                         await asyncio.wait_for(transcoder.stdin.drain(), timeout=8)
-                    await pending.put(chunk)
-                    sent += len(chunk)
+                    playback.task_done()
 
             async def feed_decoder():
                 origin = time.monotonic()
@@ -349,9 +366,13 @@ class Radio:
                     await asyncio.wait_for(response.write(chunk), timeout=8)
                 raise ConnectionError("WAV decoder ended")
 
-            workers = [asyncio.create_task(pump()), asyncio.create_task(feed_decoder()), asyncio.create_task(self.analyze(decoder, p))]
-            if transcoder is not None:
-                workers.append(asyncio.create_task(send_wav()))
+            wav_sender = asyncio.create_task(send_wav()) if transcoder is not None else None
+            workers = [
+                asyncio.create_task(pump()), asyncio.create_task(feed_decoder()),
+                asyncio.create_task(self.analyze(decoder, p)), asyncio.create_task(send_audio()),
+            ]
+            if wav_sender is not None:
+                workers.append(wav_sender)
             done, _ = await asyncio.wait(workers, return_when=asyncio.FIRST_COMPLETED)
             for worker in done:
                 worker.result()
@@ -409,12 +430,12 @@ class Radio:
         return playback
 
 
-def create_app(config, model):
+def create_app(config, model, *, get_playback_buffer: Callable[[], float] = lambda: 0.0):
     Detector(config)  # Validate thresholds before accepting playback.
     startup = float(config.get("startup_buffer_seconds", STARTUP_BUFFER_SECONDS))
     if not math.isfinite(startup) or not 0 <= startup <= 30:
         raise ValueError("Startup buffer must be between 0 and 30 seconds")
-    radio = Radio(config, model)
+    radio = Radio(config, model, get_playback_buffer)
     app = web.Application()
     app["radio"] = radio
     app.cleanup_ctx.append(radio.lifecycle)

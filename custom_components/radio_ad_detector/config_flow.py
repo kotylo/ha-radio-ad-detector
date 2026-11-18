@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import math
 import shutil
 import socket
 import secrets
@@ -10,15 +11,24 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+)
 
 from .const import (
     CONF_ADVERTISED_HOST,
     CONF_OUTPUT_FORMAT,
+    CONF_PLAYBACK_BUFFER,
     CONF_PORT,
     DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_PLAYBACK_BUFFER,
     DEFAULT_PORT,
     DOMAIN,
+    MAX_PLAYBACK_BUFFER,
 )
 from .radio_audio.engine import OUTPUT_CONTENT_TYPES
 from .radio_audio.native_model import library_path
@@ -91,16 +101,28 @@ class RadioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class RadioOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
+        options = self.config_entry.options
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
+            if math.isfinite(user_input[CONF_PLAYBACK_BUFFER]):
+                return self.async_create_entry(title="", data={**options, **user_input})
+            errors[CONF_PLAYBACK_BUFFER] = "invalid_playback_buffer"
 
-        output_format = self.config_entry.options.get(CONF_OUTPUT_FORMAT, DEFAULT_OUTPUT_FORMAT)
+        output_format = (user_input or options).get(CONF_OUTPUT_FORMAT, DEFAULT_OUTPUT_FORMAT)
+        playback_buffer = options.get(CONF_PLAYBACK_BUFFER, DEFAULT_PLAYBACK_BUFFER)
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema({
                 vol.Required(CONF_OUTPUT_FORMAT, default=output_format): SelectSelector(
                     SelectSelectorConfig(
                         options=list(OUTPUT_CONTENT_TYPES), translation_key=CONF_OUTPUT_FORMAT,
+                    ),
+                ),
+                vol.Required(CONF_PLAYBACK_BUFFER, default=playback_buffer): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=MAX_PLAYBACK_BUFFER, step="any",
+                        unit_of_measurement="s", mode=NumberSelectorMode.BOX,
                     ),
                 ),
             }),

@@ -18,8 +18,10 @@ from .assets import async_ensure_models
 from .const import (
     CONF_ADVERTISED_HOST,
     CONF_OUTPUT_FORMAT,
+    CONF_PLAYBACK_BUFFER,
     CONF_PORT,
     DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_PLAYBACK_BUFFER,
     DOMAIN,
     PLATFORMS,
 )
@@ -108,7 +110,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     try:
         model_config = await async_ensure_models(hass)
         model = await hass.async_add_executor_job(NativeYamnet, model_config)
-        app = create_app({"streams": {}, "allow_custom_urls": True, "signing_secret": entry.data["signing_secret"]}, model)
+        app = create_app(
+            {"streams": {}, "allow_custom_urls": True, "signing_secret": entry.data["signing_secret"]},
+            model,
+            get_playback_buffer=lambda: entry.options.get(CONF_PLAYBACK_BUFFER, DEFAULT_PLAYBACK_BUFFER),
+        )
         coordinator = DataUpdateCoordinator(hass, LOGGER, name="Radio Ad Detector")
         radio = app["radio"]
         radio.state_callback = coordinator.async_set_updated_data

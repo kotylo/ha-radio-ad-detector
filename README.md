@@ -54,6 +54,14 @@ the station's lower bitrate. Some Cast streams may take 15 seconds or more to
 start with MP3. Both formats support ad detection. The setting applies to new
 playback and proxy URLs. An explicit `output_format` in an action overrides it.
 
+In the same settings, **Playback buffer** sets how many seconds to delay audio
+on all new MP3 and WAV streams. It defaults to 2 seconds and accepts values from
+0 to 30, including fractional seconds. Set it to 0 to remove the added delay.
+The detector analyzes the stream ahead of playback, so an automation can mute
+the speaker before the ad starts. If your automation also unmutes the speaker
+when detection clears, account for the playback buffer so the end of the ad
+stays muted.
+
 Each slot has its own entities, so an automation can react to ads on one player
 while the others keep playing.
 

@@ -24,12 +24,17 @@
     "step": {
       "init": {
         "title": "Radio playback settings",
-        "data": {"output_format": "Default playback format"},
+        "data": {
+          "output_format": "Default playback format",
+          "playback_buffer_seconds": "Playback buffer"
+        },
         "data_description": {
-          "output_format": "WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the local network. Original MP3 saves local network traffic but can take longer to start."
+          "output_format": "WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the local network. Original MP3 saves local network traffic but can take longer to start.",
+          "playback_buffer_seconds": "Delay new streams to give ad detection a head start. Enter 0 for no added delay."
         }
       }
-    }
+    },
+    "error": {"invalid_playback_buffer": "Enter a finite number of seconds."}
   },
   "selector": {
     "output_format": {

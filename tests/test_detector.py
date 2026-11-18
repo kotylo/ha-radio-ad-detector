@@ -132,7 +132,12 @@ class Relay(unittest.IsolatedAsyncioTestCase):
         self.source = TestServer(source)
         await self.source.start_server()
         self.model = FakeModel()
-        self.app = create_app({"allow_private_streams": True, "streams": {"a": str(self.source.make_url("/radio")), "bad": str(self.source.make_url("/bad")), "burst": str(self.source.make_url("/burst"))}}, self.model)
+        self.playback_buffer = 0.0
+        self.app = create_app(
+            {"allow_private_streams": True, "streams": {"a": str(self.source.make_url("/radio")), "bad": str(self.source.make_url("/bad")), "burst": str(self.source.make_url("/burst"))}},
+            self.model,
+            get_playback_buffer=lambda: self.playback_buffer,
+        )
         self.client = TestClient(TestServer(self.app, handler_cancellation=True))
         await self.client.start_server()
 
@@ -185,6 +190,30 @@ class Relay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await response.content.readexactly(16384), self.audio[:16384])
         self.assertGreater(time.monotonic() - began, 0.8)
         response.close()
+
+    async def test_playback_buffer_gives_analysis_a_head_start_in_both_formats(self):
+        self.playback_buffer = 2.0
+        radio = self.app["radio"]
+        for output_format, expected in (("mp3", self.audio[:4096]), ("wav", b"RIFF")):
+            with self.subTest(output_format=output_format):
+                began = time.monotonic()
+                async with self.client.get("/stream/a.mp3", params={"format": output_format}) as response:
+                    self.assertEqual(response.status, 200)
+                    await self.wait_for(lambda: radio.snapshot()["ad_detected"] is True)
+                    self.assertEqual(response.content.read_nowait(), b"")
+                    self.assertEqual(await response.content.readexactly(len(expected)), expected)
+                    self.assertGreaterEqual(time.monotonic() - began, 2)
+                await self.wait_for(lambda: not radio.sessions)
+        self.assertEqual(self.upstream_calls, 2)
+
+    async def test_playback_buffer_persists_beyond_the_startup_burst(self):
+        self.playback_buffer = 0.75
+        self.app["radio"].config["startup_buffer_seconds"] = 0.5
+        began = time.monotonic()
+        async with self.client.get("/stream/a.mp3") as response:
+            self.assertEqual(await response.content.readexactly(len(self.audio)), self.audio)
+            # Allow for the last chunk being released at the start of its audio.
+            self.assertGreater(time.monotonic() - began, len(self.audio) / 16000 - 0.5 + 0.75 - 0.25)
 
     async def test_default_startup_burst_is_bounded(self):
         url = str(self.source.make_url("/long_burst"))

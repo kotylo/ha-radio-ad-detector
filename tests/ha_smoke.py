@@ -114,12 +114,23 @@ async def run(source, models=None):
 
                 options = await hass.config_entries.options.async_init(entry.entry_id)
                 assert options["type"] == "form", options
-                assert options["data_schema"]({}) == {"output_format": "wav"}
+                assert options["data_schema"]({}) == {"output_format": "wav", "playback_buffer_seconds": 2}
+                radio = entry.runtime_data.runner.app["radio"]
+                assert radio.get_playback_buffer() == 2
                 saved = await hass.config_entries.options.async_configure(
-                    options["flow_id"], {"output_format": "mp3"},
+                    options["flow_id"], {"output_format": "mp3", "playback_buffer_seconds": 0},
                 )
                 assert saved["type"] == "create_entry", saved
                 assert entry.options["output_format"] == "mp3"
+                assert entry.options["playback_buffer_seconds"] == radio.get_playback_buffer() == 0
+
+                options = await hass.config_entries.options.async_init(entry.entry_id)
+                assert options["data_schema"]({}) == {"output_format": "mp3", "playback_buffer_seconds": 0}
+                saved = await hass.config_entries.options.async_configure(
+                    options["flow_id"], {"output_format": "mp3", "playback_buffer_seconds": 1.5},
+                )
+                assert saved["type"] == "create_entry", saved
+                assert entry.options["playback_buffer_seconds"] == radio.get_playback_buffer() == 1.5
 
                 station = {"stream_url": "https://radio.example/live"}
                 for override, expected_format, expected_type in (
