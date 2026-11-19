@@ -43,3 +43,6 @@ home-assistant_v2.db*
 /custom_components/radio_ad_detector/native/
 *.zip
 *.tar.gz
+
+# Other
+*.code-workspace
