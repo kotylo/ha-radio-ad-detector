@@ -267,7 +267,11 @@ class Radio:
                 raise ValueError("Invalid upstream icy-metaint header")
             if metadata_interval > 0:
                 raise ValueError("Upstream ignored Icy-MetaData: 0; cannot safely relay metadata")
-            bitrate = bitrate_override if bitrate_override is not None else float(upstream.headers.get("icy-br", self.config.get("relay_bitrate_kbps", 128)))
+            bitrate = bitrate_override
+            if bitrate is None:
+                # Icecast can report zero when the stream bitrate is unknown.
+                reported_bitrate = float(upstream.headers.get("icy-br", "0"))
+                bitrate = reported_bitrate or float(self.config.get("relay_bitrate_kbps", 128))
             if not 32 <= bitrate <= 512:
                 raise ValueError("Unsupported MP3 bitrate")
             bytes_per_second = bitrate * 1000 / 8

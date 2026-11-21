@@ -98,7 +98,7 @@ class Relay(unittest.IsolatedAsyncioTestCase):
             self.upstream_calls += 1
             self.headers.append(dict(request.headers))
             self.queries.append(dict(request.query))
-            headers = {"Content-Type": "audio/mpeg", "icy-br": "128"}
+            headers = {"Content-Type": "audio/mpeg", "icy-br": request.query.get("icy-br", "128")}
             if "metaint" in request.query:
                 headers["icy-metaint"] = request.query["metaint"]
             response = web.StreamResponse(headers=headers)
@@ -472,6 +472,19 @@ class Relay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(await response.content.readexactly(4096), self.audio[:4096])
         response.close()
+
+    async def test_zero_icy_bitrate_relays_both_formats(self):
+        radio = self.app["radio"]
+        url = str(self.source.make_url("/radio").with_query({"icy-br": "0"}))
+        for output_format, expected in (("mp3", self.audio[:4096]), ("wav", b"RIFF")):
+            with self.subTest(output_format=output_format):
+                params = {"url": url, "format": output_format}
+                async with self.client.get("/stream", params=params) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(await response.content.readexactly(len(expected)), expected)
+                    await self.wait_for(lambda: radio.snapshot()["ad_detected"] is True)
+                await self.wait_for(lambda: not radio.sessions)
+        self.assertEqual(self.upstream_calls, 2)
 
     async def test_active_or_invalid_icy_metadata_is_rejected(self):
         url = str(self.source.make_url("/radio"))
