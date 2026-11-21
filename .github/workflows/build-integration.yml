@@ -37,7 +37,7 @@ jobs:
         with:
           name: native-x86_64
           path: custom_components/radio_ad_detector/native/linux-x86_64-musl
-      - run: python tools/package_integration.py
+      - run: python tools/package_integration.py --keep-version
       - uses: actions/upload-artifact@v4
         with:
           name: radio-ad-detector-integration

@@ -45,7 +45,7 @@ def stream_label(url):
     return f"custom:{url.host}:{digest}"
 
 
-def stream_signature(secret, url, bitrate=None, output_format="mp3", slot=None):
+def stream_signature(secret, url, bitrate=None, output_format="mp3", slot=None, fade_in_seconds=0):
     rate = "" if bitrate is None else format(float(bitrate), "g")
     payload = str(url) + "\n" + rate
     # Preserve existing MP3 links, but bind converted output to its signature.
@@ -53,6 +53,8 @@ def stream_signature(secret, url, bitrate=None, output_format="mp3", slot=None):
         payload += "\n" + output_format
     if slot is not None:
         payload += f"\nslot={slot}"
+    if fade_in_seconds:
+        payload += f"\nfade_in_seconds={fade_in_seconds}"
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 

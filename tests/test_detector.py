@@ -1,4 +1,5 @@
 import asyncio
+from array import array
 import io
 from pathlib import Path
 import shutil
@@ -374,6 +375,30 @@ class Relay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(processes), 2)
         self.assertTrue(all(process.returncode is not None for process in processes))
 
+    async def test_fade_in_ramps_playback_in_both_formats(self):
+        for fmt, bytes_per_second in (("wav", 176400), ("mp3", 16000)):
+            with self.subTest(fmt=fmt):
+                params = {"format": fmt, "fade_in_seconds": 2}
+                async with self.client.get("/stream/a.mp3", params=params) as response:
+                    self.assertEqual(response.status, 200)
+                    audio = await response.content.readexactly(3 * bytes_per_second)
+                await self.wait_for(lambda: not self.app["radio"].sessions)
+                pcm = subprocess.check_output([
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", fmt, "-i", "pipe:0",
+                    "-t", "2.75", "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1",
+                ], input=audio)
+                samples = array("h", pcm)
+
+                def peak(start):
+                    return max(samples[start:start + 800])
+
+                full_volume = peak(40000)
+                self.assertGreater(full_volume, 1000)
+                # Sample 50 ms of the steady tone at the start, midpoint and end.
+                self.assertLess(peak(800), full_volume * 0.06)
+                self.assertAlmostEqual(peak(16000) / full_volume, 0.5, delta=0.06)
+                self.assertAlmostEqual(peak(33600) / full_volume, 1.0, delta=0.02)
+
     async def test_wav_zero_startup_credit_keeps_realtime_delivery(self):
         self.app["radio"].config["startup_buffer_seconds"] = 0
         began = time.monotonic()
@@ -418,6 +443,15 @@ class Relay(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, expected)
         self.assertEqual(self.upstream_calls, 0)
         self.assertFalse(radio.sessions)
+
+    async def test_signed_fade_duration_is_validated_before_playback(self):
+        self.app["radio"].config["signing_secret"] = "test-secret"
+        url = self.source.make_url("/radio")
+        params = {"url": str(url), "sig": stream_signature("test-secret", url, fade_in_seconds=10)}
+        for fade, status in (("10", 200), ("0", 403), ("9", 403), ("-1", 400), ("11", 400), ("nan", 400)):
+            async with self.client.head("/stream", params={**params, "fade_in_seconds": fade}) as response:
+                self.assertEqual(response.status, status)
+        self.assertEqual(self.upstream_calls, 0)
 
     async def test_explicit_zero_icy_metadata_relays_audio_and_detects(self):
         # StreamGuys (including All Classical's ac128kmp3) sends this header

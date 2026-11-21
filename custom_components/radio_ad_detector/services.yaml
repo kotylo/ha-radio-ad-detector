@@ -15,6 +15,17 @@ play:
       example: https://radio.example/live.mp3
       selector:
         text:
+    fade_in_seconds:
+      name: Fade-in duration
+      description: Raise the stream from silence to its normal volume at the start of playback. Set to 0 to disable.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+          unit_of_measurement: s
+          mode: slider
     slot:
       name: Stream slot
       description: Choose 1, 2 or 3 to use that slot's detection entities and replace its current stream. Omit to use the first free slot.
@@ -35,7 +46,7 @@ play:
           mode: box
     output_format:
       name: Output format
-      description: Override the integration's default format. WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the LAN. MP3 passes the original compressed audio through.
+      description: Override the integration's default format. WAV starts faster on Cast speakers and uses about 1.4 Mb/s on the LAN. MP3 passes the original audio through when fade-in is disabled.
       selector:
         select:
           options:

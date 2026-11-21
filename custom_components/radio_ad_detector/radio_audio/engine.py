@@ -24,6 +24,7 @@ STARTUP_BUFFER_SECONDS = 15
 RELAY_CHUNK_SIZE = 2048
 OUTPUT_CONTENT_TYPES = {"mp3": "audio/mpeg", "wav": "audio/wav"}
 STREAM_SLOTS = (1, 2, 3)
+FADE_IN_SECONDS = range(11)
 
 
 @dataclass
@@ -187,6 +188,10 @@ class Radio:
         output_format = request.query.get("format", "mp3")
         if output_format not in OUTPUT_CONTENT_TYPES:
             raise web.HTTPBadRequest(text="Output format must be mp3 or wav")
+        fade_param = request.query.get("fade_in_seconds", "0")
+        if fade_param not in map(str, FADE_IN_SECONDS):
+            raise web.HTTPBadRequest(text="Fade-in duration must be a whole number from 0 to 10 seconds")
+        fade_in = int(fade_param)
         slot = None
         if "slot" in request.query:
             slot_param = request.query["slot"]
@@ -208,7 +213,7 @@ class Radio:
                 raise web.HTTPBadRequest(text=str(exc)) from exc
             station = stream_label(url)
             if secret := self.config.get("signing_secret"):
-                expected = stream_signature(secret, url, bitrate_override, output_format, slot)
+                expected = stream_signature(secret, url, bitrate_override, output_format, slot, fade_in)
                 if not hmac.compare_digest(expected, request.query.get("sig", "")):
                     raise web.HTTPForbidden(text="Use the HA playback action to generate a signed proxy URL")
         else:
@@ -279,15 +284,17 @@ class Radio:
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            if output_format == "wav":
-                # Cast can stall for tens of seconds buffering low-bitrate MP3.
-                # PCM fills its byte buffer quickly without another lossy encode.
-                # Both decoders receive bytes from this one station connection.
+            if output_format == "wav" or fade_in:
+                # Apply the fade only to playback. Analysis always gets the original audio.
+                filters = ["-af", f"afade=t=in:st=0:d={fade_in}"] if fade_in else []
+                if output_format == "wav":
+                    codec = ["-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le"]
+                else:
+                    codec = ["-c:a", "libmp3lame", "-b:a", str(round(bitrate * 1000))]
                 transcoder = await asyncio.create_subprocess_exec(
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
                     "-probesize", "8192", "-analyzeduration", "0", "-f", "mp3", "-i", "pipe:0",
-                    "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
-                    "-flush_packets", "1", "-f", "wav", "pipe:1",
+                    "-vn", *filters, *codec, "-flush_packets", "1", "-f", output_format, "pipe:1",
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
@@ -310,9 +317,9 @@ class Radio:
                     )
                     if not chunk:
                         await asyncio.gather(pending.join(), playback.join())
-                        if wav_sender is not None:
+                        if transcoded_sender is not None:
                             transcoder.stdin.close()
-                            await wav_sender
+                            await transcoded_sender
                         raise ConnectionError("Upstream stream ended")
                     # Let the player fill its startup buffer immediately, then
                     # limit delivery to real time with a bounded lead.
@@ -361,18 +368,18 @@ class Radio:
                     sent += len(chunk)
                     pending.task_done()
 
-            async def send_wav():
+            async def send_transcoded():
                 while chunk := await transcoder.stdout.read(32768):
                     await asyncio.wait_for(response.write(chunk), timeout=8)
-                raise ConnectionError("WAV decoder ended")
+                raise ConnectionError("Playback transcoder ended")
 
-            wav_sender = asyncio.create_task(send_wav()) if transcoder is not None else None
+            transcoded_sender = asyncio.create_task(send_transcoded()) if transcoder is not None else None
             workers = [
                 asyncio.create_task(pump()), asyncio.create_task(feed_decoder()),
                 asyncio.create_task(self.analyze(decoder, p)), asyncio.create_task(send_audio()),
             ]
-            if wav_sender is not None:
-                workers.append(wav_sender)
+            if transcoded_sender is not None:
+                workers.append(transcoded_sender)
             done, _ = await asyncio.wait(workers, return_when=asyncio.FIRST_COMPLETED)
             for worker in done:
                 worker.result()

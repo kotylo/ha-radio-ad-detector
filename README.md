@@ -36,7 +36,13 @@ data:
   entity_id: media_player.radio_speaker
   stream_url: https://radio.example/live.mp3
   slot: 1
+  fade_in_seconds: 3
 ```
+
+The optional **Fade-in duration** slider raises the stream smoothly from silence
+to its normal volume over 0–10 seconds. Omit `fade_in_seconds` or set it to
+`0` to play at normal volume from the start. The fade works with WAV and MP3.
+MP3 is re-encoded when a fade is enabled.
 
 Use the same action for up to three simultaneous streams. Give each player a
 different slot (`1`, `2`, or `3`). Starting playback on an occupied slot
@@ -75,4 +81,14 @@ Each pair is unavailable until its audio has been analyzed, when playback stops,
 or when analysis becomes stale. The original **Ad detected** and **Audio status**
 entities still follow the most recently started relay playback.
 
-See the [native build instructions](native/README.md) to build a release ZIP.
+## Dev
+
+From the repository root, run `python tools/package_integration.py` to increment
+the patch version in `manifest.json` and rebuild `dist/radio_ad_detector.zip`.
+Commit the updated manifest with the release. CI uses `--keep-version` to
+rebuild that version. A fresh checkout needs both [native runtimes](native/README.md).
+
+Run `.\copy-to-server.ps1` to install the packaged ZIP over SSH. It reads
+`HA_HOST`, `HA_USER`, and `HA_CUSTOM_COMPONENTS_PATH` from the root `.env`
+and backs up the previous installation beside `custom_components`. Restart
+Home Assistant to load the update.

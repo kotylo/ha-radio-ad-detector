@@ -25,7 +25,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
-from .radio_audio.engine import OUTPUT_CONTENT_TYPES, STREAM_SLOTS, create_app
+from .radio_audio.engine import FADE_IN_SECONDS, OUTPUT_CONTENT_TYPES, STREAM_SLOTS, create_app
 from .radio_audio.native_model import NativeYamnet
 from .radio_audio.stream_urls import stream_signature, validate_stream_url
 
@@ -69,8 +69,11 @@ def proxy_details(entry, call):
     slot = call.data.get("slot")
     if slot is not None:
         params["slot"] = str(slot)
+    fade_in = call.data.get("fade_in_seconds", 0)
+    if fade_in:
+        params["fade_in_seconds"] = str(fade_in)
     params["sig"] = stream_signature(
-        runtime.signing_secret, source, call.data.get("bitrate"), output_format, slot,
+        runtime.signing_secret, source, call.data.get("bitrate"), output_format, slot, fade_in,
     )
     return {
         "url": str(URL(runtime.base_url).with_path("/stream").with_query(params)),
@@ -97,7 +100,11 @@ async def async_setup(hass: HomeAssistant, config):
         vol.Optional("slot"): vol.All(vol.In(STREAM_SLOTS), vol.Coerce(int)),
     }
     hass.services.async_register(DOMAIN, "get_proxy_url", get_proxy_url, schema=vol.Schema(fields), supports_response=SupportsResponse.ONLY)
-    hass.services.async_register(DOMAIN, "play", play, schema=vol.Schema({**fields, vol.Required("entity_id"): cv.entity_id}))
+    hass.services.async_register(DOMAIN, "play", play, schema=vol.Schema({
+        **fields,
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Optional("fade_in_seconds"): vol.All(vol.In(FADE_IN_SECONDS), vol.Coerce(int)),
+    }))
     if DOMAIN in config:
         hass.async_create_task(hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "import"}, data=dict(config[DOMAIN]),

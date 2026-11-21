@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 import struct
 from pathlib import Path
 import zipfile
@@ -18,6 +19,7 @@ NATIVE_FILES = (
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["aarch64", "x86_64"], action="append")
+    parser.add_argument("--keep-version", action="store_true", help="Rebuild the version already in manifest.json (used by CI)")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     component = root / "custom_components" / "radio_ad_detector"
@@ -41,18 +43,57 @@ def main():
         *component.glob("*.py"),
         *component.joinpath("radio_audio").glob("*.py"),
         *component.joinpath("brand").glob("*.png"),
-        component / "manifest.json",
         component / "services.yaml",
         component / "strings.json",
     ]
     destination = root / "dist"
     destination.mkdir(exist_ok=True)
-    with zipfile.ZipFile(destination / "radio_ad_detector.zip", "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(source_files + native_files):
-            archive.write(path, path.relative_to(component).as_posix())
-        archive.write(component / "strings.json", "translations/en.json")
-        archive.writestr("native/SHA256SUMS.json", json.dumps(hashes, indent=2) + "\n")
-    print(destination / "radio_ad_detector.zip")
+    output = destination / "radio_ad_detector.zip"
+    manifest = component / "manifest.json"
+    # Serialize version selection and publication across local packaging runs.
+    lock = destination / ".packaging"
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        raise SystemExit(f"Packaging is busy. If a previous run was interrupted, remove {lock} and retry.") from None
+    staged_zip = lock / output.name
+    staged_manifest = lock / manifest.name
+    previous_manifest = lock / "previous.json"
+    try:
+        original = manifest.read_bytes()
+        version = json.loads(original)["version"]
+        contents = original
+        if not args.keep_version:
+            if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+                raise SystemExit(f"Expected a major.minor.patch manifest version, found {version!r}")
+            prefix, patch = version.rsplit(".", 1)
+            version = f"{prefix}.{int(patch) + 1}"
+            # Keep the manifest's compact arrays and existing indentation.
+            contents = re.sub(
+                rb'("version"\s*:\s*)"[^"]+"', rb'\g<1>"' + version.encode() + b'"',
+                original, count=1,
+            )
+        with zipfile.ZipFile(staged_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(source_files + native_files):
+                archive.write(path, path.relative_to(component).as_posix())
+            archive.writestr("manifest.json", contents)
+            archive.write(component / "strings.json", "translations/en.json")
+            archive.writestr("native/SHA256SUMS.json", json.dumps(hashes, indent=2) + "\n")
+        if not args.keep_version:
+            staged_manifest.write_bytes(contents)
+            previous_manifest.write_bytes(original)
+            staged_manifest.replace(manifest)
+        try:
+            staged_zip.replace(output)
+        except OSError:
+            if not args.keep_version:
+                previous_manifest.replace(manifest)
+            raise
+    finally:
+        for staged in (staged_zip, staged_manifest, previous_manifest):
+            staged.unlink(missing_ok=True)
+        lock.rmdir()
+    print(f"Packaged Radio Ad Detector {version} at {output}")
 
 
 if __name__ == "__main__":

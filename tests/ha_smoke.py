@@ -95,7 +95,7 @@ async def run(source, models=None):
                 assert URL(calls[0]["media_content_id"]).query["format"] == "wav"
                 await hass.services.async_call("radio_ad_detector", "play", {
                     "stream_url": "https://radio.example/live", "entity_id": "media_player.testing",
-                    "output_format": "mp3", "slot": 2,
+                    "output_format": "mp3", "slot": 2, "fade_in_seconds": 0,
                 }, blocking=True)
                 assert len(calls) == 2 and calls[1]["media_content_type"] == "audio/mpeg"
                 assert URL(calls[1]["media_content_id"]).query["format"] == "mp3"
@@ -107,7 +107,15 @@ async def run(source, models=None):
                 )
                 assert mp3["url"] == calls[1]["media_content_id"]
                 assert mp3["media_content_type"] == "audio/mpeg"
+                await hass.services.async_call("radio_ad_detector", "play", {
+                    "stream_url": "https://radio.example/live", "entity_id": "media_player.testing",
+                    "fade_in_seconds": 10,
+                }, blocking=True)
+                faded = URL(calls[-1]["media_content_id"])
+                assert faded.query["fade_in_seconds"] == "10"
                 async with aiohttp.ClientSession() as session:
+                    async with session.head(faded.with_host("127.0.0.1")) as result:
+                        assert result.status == 200
                     async with session.head(URL(mp3["url"]).with_host("127.0.0.1")) as result:
                         assert result.status == 200
                         assert result.headers["Content-Type"] == "audio/mpeg"
